@@ -41,10 +41,11 @@ const sleep = (ms) => {
 
 /**
  * @typedef {Object} SandboxSession
+ * @property {boolean} didFullRefresh
  * @property {Promise<*[]>} logs
  * @property {function(): Promise<void>} resetLogs
  * @property {function(string, string): Promise<void>} write
- * @property {function(string, string): Promise<boolean>} patch
+ * @property {function(string, string): Promise<void>} patch
  * @property {function(string): Promise<void>} remove
  * @property {function(*): Promise<*>} evaluate
  * @property {function(): Promise<void>} reload
@@ -109,8 +110,13 @@ async function sandbox({ id = nanoid(), initialFiles = new Map() } = {}) {
   // This is done in case tests fail and async handlers are kept alive
   cleanupHandlers.add(cleanupSandbox);
 
+  let didFullRefresh = false;
   return [
     {
+      /** @return {boolean} */
+      get didFullRefresh() {
+        return didFullRefresh;
+      },
       /** @returns {Promise<*[]>} */
       get logs() {
         return page.evaluate(() => window.logs);
@@ -136,7 +142,7 @@ async function sandbox({ id = nanoid(), initialFiles = new Map() } = {}) {
       /**
        * @param {string} fileName
        * @param {string} content
-       * @return {Promise<boolean>}
+       * @return {Promise<void>}
        */
       async patch(fileName, content) {
         // Register an event for HMR completion
@@ -189,7 +195,8 @@ async function sandbox({ id = nanoid(), initialFiles = new Map() } = {}) {
 
             // Slow down tests to wait for re-rendering
             await sleep(1000);
-            return false;
+            didFullRefresh = didFullRefresh || true;
+            return;
           }
 
           if (status === 'success') {
@@ -206,7 +213,7 @@ async function sandbox({ id = nanoid(), initialFiles = new Map() } = {}) {
 
         // Slow down tests to wait for re-rendering
         await sleep(1000);
-        return true;
+        didFullRefresh = didFullRefresh || false;
       },
       /**
        * @param {string} fileName
@@ -232,6 +239,7 @@ async function sandbox({ id = nanoid(), initialFiles = new Map() } = {}) {
       /** @returns {Promise<void>} */
       async reload() {
         await page.reload({ waitUntil: 'networkidle2' });
+        didFullRefresh = false;
       },
     },
     cleanupSandbox,
